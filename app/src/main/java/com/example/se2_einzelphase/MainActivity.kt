@@ -1,109 +1,89 @@
 package com.example.se2_einzelphase
 
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
-import kotlinx.coroutines.CoroutineScope
+import androidx.appcompat.app.AppCompatActivity
+import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.launch
+import java.io.BufferedInputStream
+import java.io.ObjectOutputStream
 import java.net.Socket
-import java.util.*
 
 class MainActivity : AppCompatActivity() {
-    private var active : Boolean = false;
-    private var mulamessage : String = "";
-    val adress : String = "se2-isys.aau.at"
-    val port : Int = 53212;
+    private val adress: String = "se2-isys.aau.at"
+    private val port: Int = 53212;
+    private lateinit var scor: Job;
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        var but = findViewById<Button>(R.id.button);
-        var txt = findViewById<TextView>(R.id.text2);
-        var ctx = findViewById<EditText>(R.id.editTextTextPersonName);
-        var bso = findViewById<Button>(R.id.button2);
+        val but = findViewById<Button>(R.id.button);
+        val txt = findViewById<TextView>(R.id.text2);
+        val ctx = findViewById<EditText>(R.id.editTextTextPersonName);
+        val bso = findViewById<Button>(R.id.button2);
 
         but.setOnClickListener {
-            active = true;
-            CoroutineScope(IO).launch {
-                client(adress, port, ctx.text.toString(), txt);
+            // launch coroutine on main thread. supend funcitons should switch on their own if required
+            // TODO: CoroutineScope should be used differently. This could lead to heavy memory leaks
+            scor = CoroutineScope(Dispatchers.Main).launch {
+                val response = client(adress, port, ctx.text.toString());
+
+                if (response == null) {
+                    txt.text = "Error: Check Internet connection and try again!";
+                } else {
+                    txt.text = response;
+                }
             }
         }
 
         bso.setOnClickListener {
-            var ar = ctx.text.toString().toCharArray();
-            var fin : String = "Sortiert: ";
-            var iar : IntArray = IntArray(10);
-            for(i in ar.indices){
-                when(ar[i]){
-                    '0' -> iar[0]++;
-                    '1' -> iar[1]++;
-                    '2' -> iar[2]++;
-                    '3' -> iar[3]++;
-                    '4' -> iar[4]++;
-                    '5' -> iar[5]++;
-                    '6' -> iar[6]++;
-                    '7' -> iar[7]++;
-                    '8' -> iar[8]++;
-                    '9' -> iar[9]++;
-                }
-            }
-            for(i in 1..8){
-                if(iar[0]>0){
-                    fin += "0";
-                    iar[0]--;
-                }else if(iar[2]>0){
-                    fin += "2";
-                    iar[2]--;
-                } else if(iar[4]>0){
-                    fin += "4";
-                    iar[4]--;
-                }else if(iar[6]>0){
-                    fin += "6";
-                    iar[6]--;
-                }else if(iar[8]>0){
-                    fin += "8";
-                    iar[8]--;
-                }else if(iar[1]>0){
-                    fin += "1";
-                    iar[1]--;
-                }else if(iar[3]>0){
-                    fin += "3";
-                    iar[3]--;
-                }else if(iar[5]>0){
-                    fin += "5";
-                    iar[5]--;
-                }else if(iar[7]>0){
-                    fin += "7";
-                    iar[7]--;
-                }else if(iar[9]>0){
-                    fin += "9";
-                    iar[9]--;
-                }
-            }
-            txt.text = fin;
+            val input = ctx.text.toString();
+            val sorted = sort(input);
+
+            txt.text = "Sortiert: $sorted";
         }
 
     }
 
-    private suspend fun client(adress:String,port:Int, message:String, txt:TextView){
-        var connection = Socket(adress,port);
-        var writer = connection.getOutputStream();
-        writer.write(message.toByteArray());
-        var reader = Scanner(connection.getInputStream());
-        while(active){
-            mulamessage = reader.next();
-            txt.text = mulamessage;
-            if(mulamessage!=""){
-                active = false;
-                mulamessage = "";
+    override fun onDestroy() {
+        super.onDestroy();
+        scor.cancel();
+    }
+
+    private suspend fun client(
+        adress: String,
+        port: Int,
+        message: String,
+        // withContext allows us to switch to IO thread here. Usually most functions with `suspend` use withContext(SomeDispatcher)
+    ): String? = withContext(IO) {
+        try {
+            // .use automatically calls close on all resrouces of Socket
+            Socket(adress, port).use { socket ->
+                val outputStream = ObjectOutputStream(socket.getOutputStream());
+                val inputStream = BufferedInputStream(socket.getInputStream());
+
+                outputStream.writeUTF(message);
+                outputStream.flush();
+
+                return@withContext inputStream.bufferedReader().readLine();
             }
+        } catch (error: Exception) {
+            return@withContext null; // something went wrong
         }
-        reader.close();
-        writer.close();
-        connection.close();
+    }
+
+    private fun sort(input: String): String {
+        val inputAsIntegers = input.map { it.digitToInt() } // Now we have a List<Int>
+
+        val evenNumbers = inputAsIntegers.filter { it % 2 == 0 }
+        val evenNumbersSorted = evenNumbers.sorted(); // uses natural order, which is 1, 2, 3....
+
+        val oddNumbers = inputAsIntegers.filter { it % 2 == 1 }
+        val oddNumbersSorted = oddNumbers.sorted();
+
+        return evenNumbersSorted.joinToString("") + oddNumbersSorted.joinToString("")
     }
 }
