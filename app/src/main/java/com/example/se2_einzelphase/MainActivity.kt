@@ -27,7 +27,6 @@ class MainActivity : AppCompatActivity() {
 
         but.setOnClickListener {
             // launch coroutine on main thread. supend funcitons should switch on their own if required
-            // TODO: CoroutineScope should be used differently. This could lead to heavy memory leaks
             scor = CoroutineScope(Dispatchers.Main).launch {
                 val response = client(adress, port, ctx.text.toString());
 
